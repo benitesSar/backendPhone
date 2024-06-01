@@ -1,120 +1,123 @@
+require('dotenv').config();
 const express = require('express')
+const cors = require('cors')
+const Contact = require('./models/contact')
 const app = express()
 
-app.use(express.static('dist'))
-
-const cors = require('cors')
 
 app.use(cors())
-
-// importo morgan 
+// app.use(express.static('dist'))
+app.use(express.json())
+// importo morgan - configuro en formato 'tiny' 
 const morgan = require('morgan')
-
-// configuro morgan formato'tiny'
 app.use(morgan('tiny'))
 
-app.use(express.json())
-let persons = [
-    {
-        "id": 1, 
-        "name": "julian",
-        "number": "111111",
-        "gmail": "",
-        "birthday": ""
-    },
-    {
-        "id": 2,
-        "name": "Pedro",
-        "number": "3144142323",
-        "gmail": "",
-        "birthday": "",
-    }
-]
 
 
 
+// OBTENER NUMERO DE CONTACTOS - MONGO - countDocuments
 app.get('/info', (request, response) => {
-    const now = new Date();
-    response.send(`<div>
-    <h1>Phonebook has info for ${persons.length} people</h1>
-    <br/>
-    ${now}
-    </div>`)
-})
-//GET ALL
-app.get('/api/persons', (request, response) => {
-    response.json(persons)
-})
-
-//GET ONE
-app.get('/api/persons/:id', (request, response) => {
-    const id = Number(request.params.id)
-   
-
-    const person = persons.find(person => person.id === id)
+    Contact.countDocuments({})
+    .then(count => {
+        const now = new Date();
+        response.send(`<div>
+        <h1>Phonebook has info for ${count} people</h1>
+        <br/>
+        ${now}
+        </div>`)
+    })
+    .catch(error => next(error))
     
+    
+})
 
-    if(person){
-        response.json(person)
+//GET ALL - MONGO
+app.get('/api/persons', (request, response) => {
+   Contact.find({}).then(contacts => {
+    response.json(contacts)
+   })
+})
+
+//GET ONE - MONGO
+app.get('/api/persons/:id', (request, response, next) => {
+  Contact.findById(request.params.id)
+  .then(contact => {
+    if(contact) {
+        response.json(contact)
     } else {
-        response.statusMessage = "Current id does not match"
         response.status(404).end()
     }
+  })
+  .catch(error => next(error))
 })
 
-// Delete
-app.delete('/api/persons/:id', (request, response) => {
-    const id = Number(request.params.id)
-    console.log(id)
-    persons = persons.filter(person => person.id !== id)
-    console.log(persons)
-
-    response.status(204).end()
+// DELETE - MONGO
+app.delete('/api/persons/:id', (request, response, next) => {
+    Contact.findByIdAndDelete(request.params.id)
+    .then(result => {
+        response.status(204).end()
+    })
+    .catch(error => next(error))
+ 
 })
 
-function getRandomInt(max) {
-    return Math.floor(Math.random() * max);
-  }
-// POST
-app.post('/api/persons', (request, response) => {
-    const body = request.body;
-    const normalize = (text) => text.toUpperCase().trim().replace(/\s+/g, '');
-console.log('lo que ahi en body es', body)
-    if (!body.name || !body.number ) {
-        return response.status(400).json({
-            error: 'content missing (name and number required)'
-        });
-    }
+// UPDATE - MONGO - findByIdAndUpdate
+app.put('/api/persons/:id', (request, response, next) => {
+    const { name, number, gmail, birthday } = request.body
 
-    const nameRepeat = persons.find(person => normalize(person.name) === normalize(body.name))
 
-    if(nameRepeat) {
-        return response.status(400).json({
-            error: 'name must be unique'
-        });
-    }
-
+    Contact.findByIdAndUpdate(
+        request.params.id, 
+        { name, number, gmail, birthday }, 
+        { new: true, runValidators: true, context: 'query' }
+    )
     
-    const person = {
+    .then(updateContact => {
+        response.json(updateContact)
+    })
+    .catch(error => next(error))
+})
+
+
+
+// POST - MONGO
+app.post('/api/persons', (request, response, next) => {
+    const body = request.body
+
+    const contact = new Contact({
         name: body.name,
         number: body.number,
         gmail: body.gmail,
         birthday: body.birthday,
-        id: getRandomInt(5000)
-    
-    };
+    })
 
-    persons = persons.concat(person);
-
-    response.json(person);
+    contact.save()
+    .then(savedContact => {
+        response.json(savedContact)
+    })
+    .catch(error => next(error))
 });
 
-// MIDLEWARE
+// MIDLEWARE PARA RUTAS DESCONOCIDAS
 const unknownEndpoint = (request, response) => {
-    response.status(404).send({ error: 'unknown endpoint' })
+  response.status(404).send({error: 'unknown endpoint'})
   }
   
   app.use(unknownEndpoint)
+
+// MIDLEWARE PARA MANEJO DE ERRORES
+const errorHandler = (error, request, response, next) => {
+    console.log(error.message)
+
+    if (error.name === 'CastError') {
+        return response.status(400).send({error: 'malfortted id'})
+    } else if(error.name === 'ValidationError') {
+        return response.status(400).json({error: error.message})
+    }
+    next(error)
+}
+
+app.use(errorHandler)
 
 
   const PORT = process.env.PORT || 3001
