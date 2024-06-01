@@ -11,6 +11,7 @@ app.use(express.json())
 // importo morgan - configuro en formato 'tiny' 
 const morgan = require('morgan')
 app.use(morgan('tiny'))
+app.use(express.static('dist'))
 
 
 
